@@ -14,8 +14,9 @@ import (
 type Server struct {
 	client          *Client
 	messageHandler  *MessageHandler
-	approvalHandler *ApprovalHandler  // Add this
+	approvalHandler *ApprovalHandler
 	signingSecret   string
+	processedEvents map[string]bool  // Add this for deduplication
 }
 
 func NewServer(client *Client, messageHandler *MessageHandler, approvalHandler *ApprovalHandler, signingSecret string) *Server {
@@ -23,12 +24,13 @@ func NewServer(client *Client, messageHandler *MessageHandler, approvalHandler *
 	return &Server{
 		client:          client,
 		messageHandler:  messageHandler,
-		approvalHandler: approvalHandler,  // Add this
+		approvalHandler: approvalHandler,
 		signingSecret:   signingSecret,
+		processedEvents: make(map[string]bool),  // Initialize map
 	}
 }
 
-// Update handleEvents to handle reaction events
+// Update handleEvents to check for duplicates
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -37,7 +39,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the request signature
+	// Verify signature...
 	sv, err := slack.NewSecretsVerifier(r.Header, s.signingSecret)
 	if err != nil {
 		log.Printf("❌ Error creating secrets verifier: %v", err)
@@ -82,6 +84,29 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 	// Handle callback events
 	if eventsAPIEvent.Type == slackevents.CallbackEvent {
+		// DEDUPLICATION: Check if we've already processed this event
+		// Parse event_id from raw JSON body (EventsAPIEvent doesn't expose it directly)
+		var eventEnvelope struct {
+			EventID string `json:"event_id"`
+		}
+		var eventID string
+		if err := json.Unmarshal(body, &eventEnvelope); err == nil && eventEnvelope.EventID != "" {
+			eventID = eventEnvelope.EventID
+		} else {
+			// Fallback: use a combination of fields to create a unique identifier
+			// This handles cases where event_id might not be present
+			eventID = eventsAPIEvent.TeamID + ":" + eventsAPIEvent.Type
+		}
+		
+		if eventID != "" {
+			if s.processedEvents[eventID] {
+				log.Printf("⏭️ Skipping duplicate event: %s", eventID)
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			s.processedEvents[eventID] = true
+		}
+
 		innerEvent := eventsAPIEvent.InnerEvent
 		ctx := context.Background()
 
@@ -100,7 +125,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 				log.Printf("❌ Error handling mention: %v", err)
 			}
 
-		case *slackevents.ReactionAddedEvent:  // Add this case
+		case *slackevents.ReactionAddedEvent:
 			log.Printf("👍 Reaction added event received")
 			if err := s.approvalHandler.HandleReaction(ctx, ev); err != nil {
 				log.Printf("❌ Error handling reaction: %v", err)

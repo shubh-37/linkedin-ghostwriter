@@ -190,7 +190,7 @@ func (h *CommandHandler) HandleGenerateDraft(ctx context.Context, channelID stri
 		return "", nil, err
 	}
 
-	// Save drafts to database
+	// Save each variation as a separate draft
 	var postIDs []string
 	for i, variation := range variations {
 		thoughtIDs := make([]string, len(selectedThoughts))
@@ -209,22 +209,24 @@ func (h *CommandHandler) HandleGenerateDraft(ctx context.Context, channelID stri
 		postIDs = append(postIDs, post.ID)
 	}
 
-	// Format message
+	// Format message with numbered variations
 	message := "🎯 *Generated LinkedIn Post Drafts*\n\n"
 	message += fmt.Sprintf("_Based on %d recent thought(s)_\n\n", len(selectedThoughts))
 
 	for i, variation := range variations {
-		message += fmt.Sprintf("━━━━━━━━━━━━━━━━━━\n")
+		message += "━━━━━━━━━━━━━━━━━━\n"
 		message += fmt.Sprintf("*Variation %d:*\n\n", i+1)
 		message += variation + "\n\n"
 	}
 
 	message += "━━━━━━━━━━━━━━━━━━\n\n"
-	message += "💡 *React to approve:*\n"
-	message += "• ✅ to approve all drafts\n"
-	message += "• ❌ to reject all drafts\n"
-	message += "• 📅 to schedule for later\n\n"
-	message += "_Or use: `@LinkedIn Ghostwriter schedule`_"
+	message += "💡 *To approve a specific variation:*\n"
+	message += "React with:\n"
+	message += "• 1️⃣ to approve Variation 1\n"
+	message += "• 2️⃣ to approve Variation 2\n"
+	message += "• 3️⃣ to approve Variation 3\n"
+	message += "• ✅ to approve ALL variations\n"
+	message += "• ❌ to reject all\n"
 
 	return message, postIDs, nil
 }

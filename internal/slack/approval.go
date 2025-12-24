@@ -46,11 +46,48 @@ func (h *ApprovalHandler) HandleReaction(ctx context.Context, event *slackevents
 		return h.approveDrafts(ctx, event, postIDs)
 	case "x", "❌":
 		return h.rejectDrafts(ctx, event, postIDs)
+	case "one", "1️⃣":
+		return h.approveSpecificDraft(ctx, event, postIDs, 0)
+	case "two", "2️⃣":
+		return h.approveSpecificDraft(ctx, event, postIDs, 1)
+	case "three", "3️⃣":
+		return h.approveSpecificDraft(ctx, event, postIDs, 2)
 	case "calendar", "📅":
 		return h.scheduleDrafts(ctx, event, postIDs)
 	}
 
 	return nil
+}
+
+// approveSpecificDraft approves a specific variation
+func (h *ApprovalHandler) approveSpecificDraft(ctx context.Context, event *slackevents.ReactionAddedEvent, postIDs []string, index int) error {
+	if index >= len(postIDs) {
+		return h.client.SendMessage(event.Item.Channel, "❌ Invalid variation number")
+	}
+
+	postID := postIDs[index]
+	post, err := h.postRepo.GetByID(ctx, postID)
+	if err != nil {
+		log.Printf("⚠️ Failed to get post %s: %v", postID, err)
+		return err
+	}
+
+	// Update status to approved
+	post.Status = "approved"
+	if err := h.postRepo.Update(ctx, post); err != nil {
+		log.Printf("⚠️ Failed to update post %s: %v", postID, err)
+		return err
+	}
+
+	// Reject other variations
+	for i, otherID := range postIDs {
+		if i != index {
+			h.postRepo.UpdateStatus(ctx, otherID, "rejected")
+		}
+	}
+
+	message := fmt.Sprintf("✅ Approved Variation %d! Ready for scheduling.\n\nUse `@LinkedIn Ghostwriter schedule` to schedule it.", index+1)
+	return h.client.SendMessage(event.Item.Channel, message)
 }
 
 // approveDrafts marks drafts as approved

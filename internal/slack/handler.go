@@ -13,33 +13,110 @@ import (
 	"github.com/slack-go/slack/slackevents"
 )
 
-// Add approval handler to MessageHandler struct
 type MessageHandler struct {
 	client          *Client
 	thoughtRepo     *database.ThoughtRepository
 	categorizer     *agents.CategorizerAgent
 	commandHandler  *CommandHandler
-	approvalHandler *ApprovalHandler  // Add this
+	approvalHandler *ApprovalHandler
 }
 
-// Update NewMessageHandler
 func NewMessageHandler(
-	client *Client, 
-	thoughtRepo *database.ThoughtRepository, 
+	client *Client,
+	thoughtRepo *database.ThoughtRepository,
 	categorizer *agents.CategorizerAgent,
 	commandHandler *CommandHandler,
-	approvalHandler *ApprovalHandler,  // Add this parameter
+	approvalHandler *ApprovalHandler,
 ) *MessageHandler {
 	return &MessageHandler{
 		client:          client,
 		thoughtRepo:     thoughtRepo,
 		categorizer:     categorizer,
 		commandHandler:  commandHandler,
-		approvalHandler: approvalHandler,  // Add this
+		approvalHandler: approvalHandler,
 	}
 }
 
-// Update HandleAppMention to add schedule commands
+// HandleMessage processes incoming Slack messages
+func (h *MessageHandler) HandleMessage(ctx context.Context, event *slackevents.MessageEvent) error {
+	// Ignore messages from bots
+	if event.BotID != "" {
+		return nil
+	}
+
+	// Ignore messages from bot user
+	if event.User == h.client.GetBotID() {
+		return nil
+	}
+
+	// Ignore messages with subtypes (bot messages, etc)
+	if event.SubType != "" {
+		log.Printf("Ignoring message with subtype: %s", event.SubType)
+		return nil
+	}
+
+	// Ignore empty messages
+	if strings.TrimSpace(event.Text) == "" {
+		return nil
+	}
+
+	// Ignore thread replies
+	if event.ThreadTimeStamp != "" && event.ThreadTimeStamp != event.TimeStamp {
+		log.Printf("Ignoring thread reply")
+		return nil
+	}
+
+	// Ignore messages that are commands/mentions
+	if strings.HasPrefix(strings.TrimSpace(event.Text), "<@") {
+		log.Printf("Ignoring command/mention message")
+		return nil
+	}
+
+	// Ignore command-like messages
+	text := strings.ToLower(strings.TrimSpace(event.Text))
+	commandPrefixes := []string{"generate", "schedule", "drafts", "brainstorm", "stats", "help", "view"}
+	for _, prefix := range commandPrefixes {
+		if strings.HasPrefix(text, prefix) {
+			log.Printf("Ignoring command-like message: %s", prefix)
+			return nil
+		}
+	}
+
+	log.Printf("📨 Received message: %s (from user: %s, channel: %s)",
+		event.Text, event.User, event.Channel)
+
+	// Create a thought from the message
+	thought := models.NewThought(event.Text, "slack")
+
+	// Categorize with AI
+	if err := h.categorizer.CategorizeThought(ctx, thought); err != nil {
+		log.Printf("⚠️ Failed to categorize thought: %v", err)
+		thought.Category = "uncategorized"
+		thought.TopicTags = []string{"general"}
+	}
+
+	// Save to database
+	if err := h.thoughtRepo.Create(ctx, thought); err != nil {
+		log.Printf("❌ Failed to save thought: %v", err)
+		return err
+	}
+
+	log.Printf("✅ Saved thought with ID: %s | Category: %s | Tags: %v",
+		thought.ID, thought.Category, thought.TopicTags)
+
+	// Send confirmation back to Slack
+	confirmationMsg := fmt.Sprintf("💭 Got it! Categorized as: *%s* | Tags: %s",
+		thought.Category,
+		strings.Join(thought.TopicTags, ", "))
+
+	if err := h.client.SendMessage(event.Channel, confirmationMsg); err != nil {
+		log.Printf("Failed to send confirmation: %v", err)
+	}
+
+	return nil
+}
+
+// HandleAppMention processes when someone mentions the bot
 func (h *MessageHandler) HandleAppMention(ctx context.Context, event *slackevents.AppMentionEvent) error {
 	log.Printf("📣 Bot mentioned: %s", event.Text)
 
@@ -56,29 +133,50 @@ func (h *MessageHandler) HandleAppMention(ctx context.Context, event *slackevent
 	}
 
 	if strings.HasPrefix(text, "generate") {
-		// Extract category if provided
 		parts := strings.Fields(text)
-		category := "all"
-		if len(parts) > 1 {
-			category = parts[1]
+
+		if len(parts) == 1 {
+			// No topic specified
+			message, postIDs, err := h.commandHandler.HandleGenerateDraft(ctx, event.Channel, "all")
+			if err != nil {
+				return err
+			}
+
+			messageTS, err := h.sendMessageAndGetTS(event.Channel, message)
+			if err != nil {
+				return err
+			}
+
+			h.approvalHandler.StoreDraftMessage(messageTS, postIDs)
+			return nil
 		}
 
-		// Generate drafts and get message/postIDs
-		message, postIDs, err := h.commandHandler.HandleGenerateDraft(ctx, event.Channel, category)
-		if err != nil {
-			return err
+		// Topic specified
+		topic := strings.Join(parts[1:], " ")
+
+		// Check if we have thoughts on this topic
+		thoughts, err := h.thoughtRepo.GetByCategory(ctx, topic)
+		if err == nil && len(thoughts) > 0 {
+			message, postIDs, err := h.commandHandler.HandleGenerateDraft(ctx, event.Channel, topic)
+			if err != nil {
+				return err
+			}
+
+			messageTS, err := h.sendMessageAndGetTS(event.Channel, message)
+			if err != nil {
+				return err
+			}
+
+			h.approvalHandler.StoreDraftMessage(messageTS, postIDs)
+			return nil
 		}
 
-		// Send message and store the timestamp mapping
-		messageTS, err := h.sendMessageAndGetTS(event.Channel, message)
-		if err != nil {
-			return err
-		}
+		// No thoughts found, offer brainstorm
+		offerMsg := fmt.Sprintf("🤔 I don't have any thoughts categorized as '%s' yet.\n\n", topic)
+		offerMsg += "Would you like me to brainstorm ideas on this topic?\n\n"
+		offerMsg += fmt.Sprintf("Use: `@LinkedIn Ghostwriter brainstorm %s`", topic)
 
-		// Store the mapping for approval
-		h.approvalHandler.StoreDraftMessage(messageTS, postIDs)
-
-		return nil
+		return h.client.SendMessage(event.Channel, offerMsg)
 	}
 
 	if strings.HasPrefix(text, "drafts") {
@@ -86,7 +184,6 @@ func (h *MessageHandler) HandleAppMention(ctx context.Context, event *slackevent
 	}
 
 	if strings.HasPrefix(text, "schedule") {
-		// Extract arguments
 		parts := strings.Fields(text)
 		args := []string{}
 		if len(parts) > 1 {
@@ -96,7 +193,6 @@ func (h *MessageHandler) HandleAppMention(ctx context.Context, event *slackevent
 	}
 
 	if strings.HasPrefix(text, "view schedule") || strings.HasPrefix(text, "show schedule") {
-		// Extract days if provided
 		days := 7
 		parts := strings.Fields(text)
 		if len(parts) > 2 {
@@ -106,7 +202,6 @@ func (h *MessageHandler) HandleAppMention(ctx context.Context, event *slackevent
 	}
 
 	if strings.HasPrefix(text, "brainstorm") {
-		// Extract topic
 		topic := strings.TrimPrefix(text, "brainstorm")
 		topic = strings.TrimSpace(topic)
 		if topic == "" {
@@ -119,7 +214,6 @@ func (h *MessageHandler) HandleAppMention(ctx context.Context, event *slackevent
 	if text != "" {
 		thought := models.NewThought(text, "slack")
 
-		// Categorize with AI
 		if err := h.categorizer.CategorizeThought(ctx, thought); err != nil {
 			log.Printf("⚠️ Failed to categorize thought: %v", err)
 			thought.Category = "uncategorized"
@@ -131,47 +225,20 @@ func (h *MessageHandler) HandleAppMention(ctx context.Context, event *slackevent
 			return err
 		}
 
-		log.Printf("✅ Saved thought from mention with ID: %s | Category: %s", 
+		log.Printf("✅ Saved thought from mention with ID: %s | Category: %s",
 			thought.ID, thought.Category)
-		
-		confirmationMsg := fmt.Sprintf("💭 Captured! Category: *%s* | Tags: %s", 
-			thought.Category, 
+
+		confirmationMsg := fmt.Sprintf("💭 Captured! Category: *%s* | Tags: %s",
+			thought.Category,
 			strings.Join(thought.TopicTags, ", "))
-		
+
 		return h.client.SendMessage(event.Channel, confirmationMsg)
 	}
 
 	return nil
 }
 
-// Update help message
-func (h *MessageHandler) sendHelpMessage(channelID string) error {
-	helpText := `*LinkedIn Ghostwriter Bot* 🤖
-
-I capture your thoughts and help generate LinkedIn posts!
-
-*Commands:*
-- \@LinkedIn Ghostwriter generate - Generate post drafts
-- \@LinkedIn Ghostwriter generate [category] - Generate from category
-- \@LinkedIn Ghostwriter brainstorm [topic] - Brainstorm ideas
-- \@LinkedIn Ghostwriter drafts - View pending drafts
-- \@LinkedIn Ghostwriter schedule [1-4] - Schedule approved posts
-- \@LinkedIn Ghostwriter view schedule - See posting schedule
-- \@LinkedIn Ghostwriter stats - Show statistics
-- \@LinkedIn Ghostwriter help - Show this help
-
-*Workflow:*
-1. Share thoughts naturally
-2. Generate posts: \@LinkedIn Ghostwriter generate
-3. React with ✅ to approve drafts
-4. Schedule: \@LinkedIn Ghostwriter schedule 2 (2 posts/day)
-5. Posts publish automatically!
-
-*Categories:*
-technical, business, learning, product_update, personal, industry_insight, milestone`
-
-	return h.client.SendMessage(channelID, helpText)
-}
+// ... rest of methods (sendHelpMessage, sendStatsMessage, etc)
 
 // Helper function to send message and get timestamp
 func (h *MessageHandler) sendMessageAndGetTS(channelID, message string) (string, error) {
@@ -182,57 +249,33 @@ func (h *MessageHandler) sendMessageAndGetTS(channelID, message string) (string,
 	return timestamp, err
 }
 
-// HandleMessage processes incoming Slack messages
-func (h *MessageHandler) HandleMessage(ctx context.Context, event *slackevents.MessageEvent) error {
-	// Ignore messages from bots (including ourselves)
-	if event.BotID != "" {
-		return nil
-	}
+// sendHelpMessage sends usage instructions
+func (h *MessageHandler) sendHelpMessage(channelID string) error {
+	helpText := `*LinkedIn Ghostwriter Bot* 🤖
 
-	// Ignore empty messages
-	if strings.TrimSpace(event.Text) == "" {
-		return nil
-	}
+I capture your thoughts and help generate LinkedIn posts!
 
-	// Ignore thread replies (optional - you can change this)
-	if event.ThreadTimeStamp != "" && event.ThreadTimeStamp != event.TimeStamp {
-		log.Printf("Ignoring thread reply")
-		return nil
-	}
+*Commands:*
+- \@LinkedIn Ghostwriter generate - Generate from recent thoughts
+- \@LinkedIn Ghostwriter generate [topic] - Generate from specific topic
+- \@LinkedIn Ghostwriter brainstorm [topic] - Brainstorm ideas
+- \@LinkedIn Ghostwriter drafts - View pending drafts
+- \@LinkedIn Ghostwriter schedule [1-4] - Schedule approved posts
+- \@LinkedIn Ghostwriter view schedule - See posting schedule
+- \@LinkedIn Ghostwriter stats - Show statistics
+- \@LinkedIn Ghostwriter help - Show this help
 
-	log.Printf("📨 Received message: %s (from user: %s, channel: %s)", 
-		event.Text, event.User, event.Channel)
+*Workflow:*
+1. Share thoughts naturally
+2. Generate posts: \@LinkedIn Ghostwriter generate
+3. React with 1️⃣ 2️⃣ 3️⃣ or ✅ to approve
+4. Schedule: \@LinkedIn Ghostwriter schedule 2 (2 posts/day)
+5. Posts publish automatically!
 
-	// Create a thought from the message
-	thought := models.NewThought(event.Text, "slack")
+*Categories:*
+technical, business, learning, product_update, personal, industry_insight, milestone`
 
-	// Categorize with AI
-	if err := h.categorizer.CategorizeThought(ctx, thought); err != nil {
-		log.Printf("⚠️ Failed to categorize thought: %v", err)
-		// Continue anyway with default values
-		thought.Category = "uncategorized"
-		thought.TopicTags = []string{"general"}
-	}
-
-	// Save to database
-	if err := h.thoughtRepo.Create(ctx, thought); err != nil {
-		log.Printf("❌ Failed to save thought: %v", err)
-		return err
-	}
-
-	log.Printf("✅ Saved thought with ID: %s | Category: %s | Tags: %v", 
-		thought.ID, thought.Category, thought.TopicTags)
-
-	// Send confirmation back to Slack
-	confirmationMsg := fmt.Sprintf("💭 Got it! Categorized as: *%s* | Tags: %s", 
-		thought.Category, 
-		strings.Join(thought.TopicTags, ", "))
-	
-	if err := h.client.SendMessage(event.Channel, confirmationMsg); err != nil {
-		log.Printf("Failed to send confirmation: %v", err)
-	}
-
-	return nil
+	return h.client.SendMessage(channelID, helpText)
 }
 
 // sendStatsMessage sends statistics about captured thoughts
@@ -266,7 +309,7 @@ func (h *MessageHandler) sendStatsMessage(ctx context.Context, channelID string)
 	if len(thoughts) < recentCount {
 		recentCount = len(thoughts)
 	}
-	
+
 	for i := 0; i < recentCount; i++ {
 		preview := thoughts[i].Content
 		if len(preview) > 60 {

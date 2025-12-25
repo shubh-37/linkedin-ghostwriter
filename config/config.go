@@ -16,10 +16,7 @@ type Config struct {
 	AnthropicKey   string
 }
 
-// LoadConfig loads configuration from environment variables
-// It first tries to load from .env file, then falls back to system environment variables
 func LoadConfig() *Config {
-	// Load .env file if it exists (ignore error if file doesn't exist)
 	if err := godotenv.Load(); err != nil {
 		log.Printf("Warning: .env file not found or couldn't be loaded: %v", err)
 	}

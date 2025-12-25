@@ -44,13 +44,10 @@ type anthropicError struct {
 	Message string `json:"message"`
 }
 
-// NewCategorizerAgent creates a new categorization agent
 func NewCategorizerAgent(apiKey string) *CategorizerAgent {
 	if apiKey == "" {
 		log.Fatal("ANTHROPIC_API_KEY is required")
 	}
-
-	log.Println("✅ Categorizer Agent initialized")
 
 	return &CategorizerAgent{
 		apiKey:     apiKey,
@@ -58,9 +55,7 @@ func NewCategorizerAgent(apiKey string) *CategorizerAgent {
 	}
 }
 
-// CategorizeThought analyzes a thought and returns category, topic tags, and readiness assessment
 func (a *CategorizerAgent) CategorizeThought(ctx context.Context, thought *models.Thought) error {
-	log.Printf("🤖 Categorizing thought: %s", thought.Content[:min(50, len(thought.Content))])
 
 	prompt := fmt.Sprintf(`You are an AI assistant helping to categorize LinkedIn content ideas.
 
@@ -77,7 +72,6 @@ TAGS: [tag1, tag2, tag3]
 READINESS: [draft_ready or needs_brainstorm]
 REASON: [brief explanation why]`, thought.Content)
 
-	// Create request payload
 	reqBody := anthropicRequest{
 		Model:     "claude-sonnet-4-5-20250929",
 		MaxTokens: 500,
@@ -94,48 +88,40 @@ REASON: [brief explanation why]`, thought.Content)
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set headers
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", a.apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	// Make the request
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to call Anthropic API: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
 
-	// Check for HTTP errors
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("❌ Anthropic API error (status %d): %s", resp.StatusCode, string(body))
+		log.Printf("Anthropic API error (status %d): %s", resp.StatusCode, string(body))
 		return fmt.Errorf("API request failed with status %d", resp.StatusCode)
 	}
 
-	// Parse response
 	var apiResp anthropicResponse
 	if err := json.Unmarshal(body, &apiResp); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// Check for API errors
 	if apiResp.Error != nil {
 		return fmt.Errorf("API error: %s - %s", apiResp.Error.Type, apiResp.Error.Message)
 	}
 
-	// Extract response text
 	var responseText string
 	if len(apiResp.Content) > 0 && apiResp.Content[0].Type == "text" {
 		responseText = apiResp.Content[0].Text
@@ -143,28 +129,20 @@ REASON: [brief explanation why]`, thought.Content)
 		return fmt.Errorf("unexpected response format")
 	}
 
-	log.Printf("📝 Claude response: %s", responseText)
-
-	// Parse the response
 	category, tags, readiness := a.parseResponse(responseText)
 
-	// Update the thought
 	thought.Category = category
 	thought.TopicTags = tags
 	
-	// Update status based on readiness
 	if readiness == "draft_ready" {
-		thought.Status = "raw" // Will be picked up for drafting
+		thought.Status = "raw"
 	} else {
-		thought.Status = "raw" // Will be picked up for brainstorming
+		thought.Status = "raw"
 	}
-
-	log.Printf("✅ Categorized as: %s | Tags: %v | Readiness: %s", category, tags, readiness)
 
 	return nil
 }
 
-// parseResponse extracts category, tags, and readiness from Claude's response
 func (a *CategorizerAgent) parseResponse(response string) (string, []string, string) {
 	var category string
 	var tags []string
@@ -182,9 +160,7 @@ func (a *CategorizerAgent) parseResponse(response string) (string, []string, str
 		
 		if strings.HasPrefix(line, "TAGS:") {
 			tagsStr := strings.TrimSpace(strings.TrimPrefix(line, "TAGS:"))
-			// Remove brackets if present
 			tagsStr = strings.Trim(tagsStr, "[]")
-			// Split by comma
 			tagList := strings.Split(tagsStr, ",")
 			for _, tag := range tagList {
 				tag = strings.TrimSpace(tag)
@@ -201,7 +177,6 @@ func (a *CategorizerAgent) parseResponse(response string) (string, []string, str
 		}
 	}
 
-	// Default values if parsing failed
 	if category == "" {
 		category = "uncategorized"
 	}

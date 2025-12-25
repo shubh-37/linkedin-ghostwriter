@@ -18,13 +18,10 @@ type ContentGeneratorAgent struct {
 	httpClient *http.Client
 }
 
-// NewContentGeneratorAgent creates a new content generation agent
 func NewContentGeneratorAgent(apiKey string) *ContentGeneratorAgent {
 	if apiKey == "" {
 		log.Fatal("ANTHROPIC_API_KEY is required")
 	}
-
-	log.Println("✅ Content Generator Agent initialized")
 
 	return &ContentGeneratorAgent{
 		apiKey:     apiKey,
@@ -32,21 +29,15 @@ func NewContentGeneratorAgent(apiKey string) *ContentGeneratorAgent {
 	}
 }
 
-// GeneratePost creates a LinkedIn post from one or more thoughts
 func (a *ContentGeneratorAgent) GeneratePost(ctx context.Context, thoughts []*models.Thought, userStyle string) ([]string, error) {
 	if len(thoughts) == 0 {
 		return nil, fmt.Errorf("no thoughts provided")
 	}
 
-	log.Printf("📝 Generating post from %d thought(s)", len(thoughts))
-
-	// Combine thought contents
 	var thoughtsText string
 	for i, thought := range thoughts {
 		thoughtsText += fmt.Sprintf("\nThought %d: %s", i+1, thought.Content)
 	}
-
-	// Build the prompt
 	prompt := fmt.Sprintf(`You are a LinkedIn ghostwriter helping create authentic, engaging posts.
 
 Input thoughts:%s
@@ -82,27 +73,21 @@ Format your response as:
 ===VARIATION 3===
 [post content]`, thoughtsText)
 
-	// Call Claude API
 	responseText, err := a.callClaude(ctx, prompt)
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse variations
 	variations := a.parseVariations(responseText)
 
 	if len(variations) == 0 {
 		return nil, fmt.Errorf("failed to generate variations")
 	}
 
-	log.Printf("✅ Generated %d post variations", len(variations))
-
 	return variations, nil
 }
 
-// GenerateBrainstorm creates a brainstorm session for an incomplete thought
 func (a *ContentGeneratorAgent) GenerateBrainstorm(ctx context.Context, thought *models.Thought) (string, []string, error) {
-	log.Printf("💡 Generating brainstorm for: %s", thought.Content[:min(50, len(thought.Content))])
 
 	prompt := fmt.Sprintf(`You are helping brainstorm LinkedIn content ideas.
 
@@ -134,15 +119,11 @@ QUESTIONS TO CONSIDER:
 		return "", nil, err
 	}
 
-	// Parse brainstorm content
 	brainstormContent, angles := a.parseBrainstorm(responseText)
-
-	log.Printf("✅ Generated brainstorm with %d angles", len(angles))
 
 	return brainstormContent, angles, nil
 }
 
-// callClaude makes an API call to Claude
 func (a *ContentGeneratorAgent) callClaude(ctx context.Context, prompt string) (string, error) {
 	reqBody := anthropicRequest{
 		Model:     "claude-sonnet-4-5-20250929",
@@ -181,7 +162,7 @@ func (a *ContentGeneratorAgent) callClaude(ctx context.Context, prompt string) (
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("❌ Anthropic API error (status %d): %s", resp.StatusCode, string(body))
+		log.Printf("Anthropic API error (status %d): %s", resp.StatusCode, string(body))
 		return "", fmt.Errorf("API request failed with status %d", resp.StatusCode)
 	}
 
@@ -201,11 +182,9 @@ func (a *ContentGeneratorAgent) callClaude(ctx context.Context, prompt string) (
 	return "", fmt.Errorf("unexpected response format")
 }
 
-// parseVariations extracts post variations from Claude's response
 func (a *ContentGeneratorAgent) parseVariations(response string) []string {
 	var variations []string
 
-	// Split by variation markers
 	parts := strings.Split(response, "===VARIATION")
 
 	for _, part := range parts {
@@ -213,13 +192,11 @@ func (a *ContentGeneratorAgent) parseVariations(response string) []string {
 			continue
 		}
 
-		// Remove the variation number line (e.g., "1===")
 		lines := strings.Split(part, "\n")
 		if len(lines) < 2 {
 			continue
 		}
 
-		// Join remaining lines
 		content := strings.Join(lines[1:], "\n")
 		content = strings.TrimSpace(content)
 
@@ -231,12 +208,10 @@ func (a *ContentGeneratorAgent) parseVariations(response string) []string {
 	return variations
 }
 
-// parseBrainstorm extracts brainstorm content and angles
 func (a *ContentGeneratorAgent) parseBrainstorm(response string) (string, []string) {
 	var brainstormContent string
 	var angles []string
 
-	// Extract exploration section
 	if idx := strings.Index(response, "EXPLORATION:"); idx != -1 {
 		endIdx := strings.Index(response, "KEY ANGLES:")
 		if endIdx == -1 {
@@ -245,7 +220,6 @@ func (a *ContentGeneratorAgent) parseBrainstorm(response string) (string, []stri
 		brainstormContent = strings.TrimSpace(response[idx+len("EXPLORATION:"):endIdx])
 	}
 
-	// Extract angles
 	if idx := strings.Index(response, "KEY ANGLES:"); idx != -1 {
 		endIdx := strings.Index(response, "QUESTIONS TO CONSIDER:")
 		if endIdx == -1 {
@@ -256,7 +230,6 @@ func (a *ContentGeneratorAgent) parseBrainstorm(response string) (string, []stri
 
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
-			// Remove numbering like "1.", "2.", etc.
 			if len(line) > 3 && line[0] >= '1' && line[0] <= '9' && line[1] == '.' {
 				angle := strings.TrimSpace(line[2:])
 				if angle != "" {

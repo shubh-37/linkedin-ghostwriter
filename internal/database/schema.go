@@ -2,14 +2,9 @@ package database
 
 import (
 	"context"
-	"log"
 )
 
-// CreateTables creates all necessary database tables
 func (db *DB) CreateTables(ctx context.Context) error {
-	log.Println("Creating database tables...")
-
-	// Thoughts table
 	thoughtsTable := `
 	CREATE TABLE IF NOT EXISTS thoughts (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -27,7 +22,6 @@ func (db *DB) CreateTables(ctx context.Context) error {
 	CREATE INDEX IF NOT EXISTS idx_thoughts_timestamp ON thoughts(timestamp DESC);
 	`
 
-	// Brainstorm sessions table
 	brainstormTable := `
 	CREATE TABLE IF NOT EXISTS brainstorm_sessions (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -42,7 +36,6 @@ func (db *DB) CreateTables(ctx context.Context) error {
 	CREATE INDEX IF NOT EXISTS idx_brainstorm_status ON brainstorm_sessions(status);
 	`
 
-	// Posts table
 	postsTable := `
 	CREATE TABLE IF NOT EXISTS posts (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -64,7 +57,6 @@ func (db *DB) CreateTables(ctx context.Context) error {
 	CREATE INDEX IF NOT EXISTS idx_posts_published ON posts(published_at DESC);
 	`
 
-	// Writing style profile table
 	styleTable := `
 	CREATE TABLE IF NOT EXISTS writing_style_profile (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -77,7 +69,6 @@ func (db *DB) CreateTables(ctx context.Context) error {
 	);
 	`
 
-	// Execute all table creations
 	tables := []string{thoughtsTable, brainstormTable, postsTable, styleTable}
 	
 	for _, table := range tables {
@@ -86,6 +77,5 @@ func (db *DB) CreateTables(ctx context.Context) error {
 		}
 	}
 
-	log.Println("✅ All tables created successfully")
 	return nil
 }

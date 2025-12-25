@@ -18,7 +18,6 @@ func NewPostRepository(db *DB) *PostRepository {
 	return &PostRepository{db: db}
 }
 
-// Create inserts a new post into the database
 func (r *PostRepository) Create(ctx context.Context, post *models.Post) error {
 	if post.ID == "" {
 		post.ID = uuid.New().String()
@@ -28,7 +27,6 @@ func (r *PostRepository) Create(ctx context.Context, post *models.Post) error {
 		post.CreatedAt = time.Now()
 	}
 
-	// Convert metrics map to JSON
 	metricsJSON, err := json.Marshal(post.Metrics)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metrics: %w", err)
@@ -63,7 +61,6 @@ func (r *PostRepository) Create(ctx context.Context, post *models.Post) error {
 	return nil
 }
 
-// GetByID retrieves a post by its ID
 func (r *PostRepository) GetByID(ctx context.Context, id string) (*models.Post, error) {
 	query := `
 		SELECT id, content, status, source_thought_ids, brainstorm_session_id, 
@@ -95,7 +92,6 @@ func (r *PostRepository) GetByID(ctx context.Context, id string) (*models.Post, 
 		return nil, fmt.Errorf("post not found: %w", err)
 	}
 
-	// Unmarshal metrics
 	if err := json.Unmarshal(metricsJSON, &post.Metrics); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal metrics: %w", err)
 	}
@@ -103,7 +99,6 @@ func (r *PostRepository) GetByID(ctx context.Context, id string) (*models.Post, 
 	return post, nil
 }
 
-// GetByStatus retrieves posts by status
 func (r *PostRepository) GetByStatus(ctx context.Context, status string) ([]*models.Post, error) {
 	query := `
 		SELECT id, content, status, source_thought_ids, brainstorm_session_id, 
@@ -143,7 +138,6 @@ func (r *PostRepository) GetByStatus(ctx context.Context, status string) ([]*mod
 			return nil, fmt.Errorf("failed to scan post: %w", err)
 		}
 
-		// Unmarshal metrics
 		if err := json.Unmarshal(metricsJSON, &post.Metrics); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal metrics: %w", err)
 		}
@@ -154,7 +148,6 @@ func (r *PostRepository) GetByStatus(ctx context.Context, status string) ([]*mod
 	return posts, nil
 }
 
-// GetScheduledPosts retrieves posts that are scheduled but not yet published
 func (r *PostRepository) GetScheduledPosts(ctx context.Context) ([]*models.Post, error) {
 	query := `
 		SELECT id, content, status, source_thought_ids, brainstorm_session_id, 
@@ -204,7 +197,6 @@ func (r *PostRepository) GetScheduledPosts(ctx context.Context) ([]*models.Post,
 	return posts, nil
 }
 
-// Update updates a post
 func (r *PostRepository) Update(ctx context.Context, post *models.Post) error {
 	metricsJSON, err := json.Marshal(post.Metrics)
 	if err != nil {
@@ -244,7 +236,6 @@ func (r *PostRepository) Update(ctx context.Context, post *models.Post) error {
 	return nil
 }
 
-// UpdateStatus updates only the status of a post
 func (r *PostRepository) UpdateStatus(ctx context.Context, id, status string) error {
 	query := `UPDATE posts SET status = $2 WHERE id = $1`
 
@@ -260,7 +251,6 @@ func (r *PostRepository) UpdateStatus(ctx context.Context, id, status string) er
 	return nil
 }
 
-// Delete deletes a post by ID
 func (r *PostRepository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM posts WHERE id = $1`
 

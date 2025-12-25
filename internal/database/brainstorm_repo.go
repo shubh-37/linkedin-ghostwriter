@@ -17,7 +17,6 @@ func NewBrainstormRepository(db *DB) *BrainstormRepository {
 	return &BrainstormRepository{db: db}
 }
 
-// Create inserts a new brainstorm session
 func (r *BrainstormRepository) Create(ctx context.Context, session *models.BrainstormSession) error {
 	if session.ID == "" {
 		session.ID = uuid.New().String()
@@ -50,7 +49,6 @@ func (r *BrainstormRepository) Create(ctx context.Context, session *models.Brain
 	return nil
 }
 
-// GetByID retrieves a brainstorm session by ID
 func (r *BrainstormRepository) GetByID(ctx context.Context, id string) (*models.BrainstormSession, error) {
 	query := `
 		SELECT id, topic, thought_ids, brainstorm_content, key_angles, status, created_at
@@ -76,7 +74,6 @@ func (r *BrainstormRepository) GetByID(ctx context.Context, id string) (*models.
 	return session, nil
 }
 
-// GetByStatus retrieves brainstorm sessions by status
 func (r *BrainstormRepository) GetByStatus(ctx context.Context, status string) ([]*models.BrainstormSession, error) {
 	query := `
 		SELECT id, topic, thought_ids, brainstorm_content, key_angles, status, created_at
@@ -112,7 +109,6 @@ func (r *BrainstormRepository) GetByStatus(ctx context.Context, status string) (
 	return sessions, nil
 }
 
-// Update updates a brainstorm session
 func (r *BrainstormRepository) Update(ctx context.Context, session *models.BrainstormSession) error {
 	query := `
 		UPDATE brainstorm_sessions
@@ -141,7 +137,6 @@ func (r *BrainstormRepository) Update(ctx context.Context, session *models.Brain
 	return nil
 }
 
-// Delete deletes a brainstorm session
 func (r *BrainstormRepository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM brainstorm_sessions WHERE id = $1`
 

@@ -17,14 +17,11 @@ func NewThoughtRepository(db *DB) *ThoughtRepository {
 	return &ThoughtRepository{db: db}
 }
 
-// Create inserts a new thought into the database
 func (r *ThoughtRepository) Create(ctx context.Context, thought *models.Thought) error {
-	// Generate UUID if not provided
 	if thought.ID == "" {
 		thought.ID = uuid.New().String()
 	}
 
-	// Set timestamp if not provided
 	if thought.Timestamp.IsZero() {
 		thought.Timestamp = time.Now()
 	}
@@ -52,7 +49,6 @@ func (r *ThoughtRepository) Create(ctx context.Context, thought *models.Thought)
 	return nil
 }
 
-// GetByID retrieves a thought by its ID
 func (r *ThoughtRepository) GetByID(ctx context.Context, id string) (*models.Thought, error) {
 	query := `
 		SELECT id, source, content, category, topic_tags, status, timestamp, related_thoughts
@@ -79,7 +75,6 @@ func (r *ThoughtRepository) GetByID(ctx context.Context, id string) (*models.Tho
 	return thought, nil
 }
 
-// GetAll retrieves all thoughts
 func (r *ThoughtRepository) GetAll(ctx context.Context) ([]*models.Thought, error) {
 	query := `
 		SELECT id, source, content, category, topic_tags, status, timestamp, related_thoughts
@@ -115,7 +110,6 @@ func (r *ThoughtRepository) GetAll(ctx context.Context) ([]*models.Thought, erro
 	return thoughts, nil
 }
 
-// GetByStatus retrieves thoughts by status
 func (r *ThoughtRepository) GetByStatus(ctx context.Context, status string) ([]*models.Thought, error) {
 	query := `
 		SELECT id, source, content, category, topic_tags, status, timestamp, related_thoughts
@@ -152,7 +146,6 @@ func (r *ThoughtRepository) GetByStatus(ctx context.Context, status string) ([]*
 	return thoughts, nil
 }
 
-// GetByCategory retrieves thoughts by category
 func (r *ThoughtRepository) GetByCategory(ctx context.Context, category string) ([]*models.Thought, error) {
 	query := `
 		SELECT id, source, content, category, topic_tags, status, timestamp, related_thoughts
@@ -189,7 +182,6 @@ func (r *ThoughtRepository) GetByCategory(ctx context.Context, category string) 
 	return thoughts, nil
 }
 
-// Update updates a thought
 func (r *ThoughtRepository) Update(ctx context.Context, thought *models.Thought) error {
 	query := `
 		UPDATE thoughts
@@ -219,7 +211,6 @@ func (r *ThoughtRepository) Update(ctx context.Context, thought *models.Thought)
 	return nil
 }
 
-// UpdateStatus updates only the status of a thought
 func (r *ThoughtRepository) UpdateStatus(ctx context.Context, id, status string) error {
 	query := `UPDATE thoughts SET status = $2 WHERE id = $1`
 
@@ -235,7 +226,6 @@ func (r *ThoughtRepository) UpdateStatus(ctx context.Context, id, status string)
 	return nil
 }
 
-// Delete deletes a thought by ID
 func (r *ThoughtRepository) Delete(ctx context.Context, id string) error {
 	query := `DELETE FROM thoughts WHERE id = $1`
 
@@ -251,7 +241,6 @@ func (r *ThoughtRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// Count returns total number of thoughts
 func (r *ThoughtRepository) Count(ctx context.Context) (int, error) {
 	var count int
 	query := `SELECT COUNT(*) FROM thoughts`

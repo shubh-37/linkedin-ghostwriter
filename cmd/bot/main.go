@@ -3,22 +3,19 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/joho/godotenv"
 	"github.com/shubh-37/linkedin-ghostwriter/config"
 	"github.com/shubh-37/linkedin-ghostwriter/internal/agents"
 	"github.com/shubh-37/linkedin-ghostwriter/internal/database"
+	"github.com/shubh-37/linkedin-ghostwriter/internal/linear"
 	slackpkg "github.com/shubh-37/linkedin-ghostwriter/internal/slack"
 )
 
 func main() {
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using environment variables")
-	}
-
 	log.Println("Starting LinkedIn Ghostwriter Bot")
 
 	cfg := config.LoadConfig()
@@ -67,6 +64,25 @@ func main() {
 		approvalHandler,
 	)
 
+	var linearWebhookHandler *linear.WebhookHandler
+	if cfg.LinearToken != "" {
+		linearClient := linear.NewClient(cfg.LinearToken)
+		linearWebhookHandler = linear.NewWebhookHandler(
+			linearClient,
+			thoughtRepo,
+			categorizer,
+		)
+		log.Println("Linear webhook handler initialized")
+	} else {
+		log.Println("Linear API key not configured")
+		log.Println("Add LINEAR_API_KEY to .env to enable Linear integration")
+	}
+
+	if linearWebhookHandler != nil {
+		http.HandleFunc("/linear/webhook", linearWebhookHandler.HandleWebhook)
+		log.Println("Linear webhook endpoint: http://localhost:3000/linear/webhook")
+	}
+
 	slackServer := slackpkg.NewServer(slackClient, messageHandler, approvalHandler, cfg.SlackSigningSecret)
 
 	go func() {
@@ -80,6 +96,4 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-
-	log.Println("Shutting down gracefully...")
 }

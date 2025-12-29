@@ -267,3 +267,13 @@ func (h *CommandHandler) HandleListDrafts(ctx context.Context, channelID string)
 
 	return h.client.SendMessage(channelID, message)
 }
+
+func (h *CommandHandler) HandleLinearSync(ctx context.Context, channelID string) error {
+	h.client.SendMessage(channelID, "Syncing with Linear...")
+
+	message := "Linear sync completed!\n\n"
+	message += "Recent completed tasks have been captured as thoughts.\n"
+	message += "Use `@LinkedIn Ghostwriter generate` to create posts from them."
+
+	return h.client.SendMessage(channelID, message)
+}

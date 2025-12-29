@@ -178,6 +178,10 @@ func (h *MessageHandler) HandleAppMention(ctx context.Context, event *slackevent
 		return h.commandHandler.HandleBrainstorm(ctx, event.Channel, topic)
 	}
 
+	if strings.HasPrefix(text, "sync linear") || strings.HasPrefix(text, "linear sync") {
+		return h.commandHandler.HandleLinearSync(ctx, event.Channel)
+	}
+
 	if text != "" {
 		thought := models.NewThought(text, "slack")
 

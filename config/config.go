@@ -22,7 +22,7 @@ func LoadConfig() *Config {
 	}
 	
 	return &Config{
-		DatabaseURL:        getEnv("DATABASE_URL", "postgres://ghostwriter_user:ghostwriter_pass_2024@localhost:5432/linkedin_ghostwriter?sslmode=disable"),
+		DatabaseURL:        getEnv("DATABASE_URL", ""),
 		SlackToken:         getEnv("SLACK_BOT_TOKEN", ""),
 		SlackSigningSecret: getEnv("SLACK_SIGNING_SECRET", ""),
 		LinearToken:        getEnv("LINEAR_API_KEY", ""),
